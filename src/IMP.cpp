@@ -621,23 +621,40 @@ void IR_upper_initial_v1(VNode &heap, Vint &candidate){
 void IR_upper_initial_v2(VNode &heap, Vint &candidate){
     upper.resize(vnums, 1);
     Vdouble degree_2(vnums, 0);
-
+    int count = 0;
+    double whole_residual=0;
+    double whole_origin=0;
     for(int r = dnum;r>0;r--) {
         for (int v : candidate) {
             double degree2 = 0;
+            double residual = 0;
             for (Edge &e : Gneighbour[v]) {
                 // calculate expection
                 degree2 += e.weight/RAND_MAX*upper[e.vertex];
+                // elinimate layer1 circle
+                if(r==dnum-1){
+                    for(Edge &r :Gneighbour[e.vertex]){
+                        if(r.vertex==v){
+                            residual+=(e.weight/RAND_MAX)*(r.weight/RAND_MAX);
+                            count++;
+                            break;
+                        }
+                    }
+                }
             }
+            whole_origin+=degree2;
+            whole_residual+=residual;
+            degree2 -= residual;
             degree_2[v] = 1 + degree2;
         }
         upper.swap(degree_2);
     }
-
-    for(int v:candidate){
-        double result = eliminate_cycle(v);
-        upper[v]-= result;
-    }
+    printf("single cycles: %d\n",count);
+    printf("origin total spread:%f\tcycle:%f\tratio:%f\n",whole_origin,whole_residual,whole_residual/whole_origin);
+//    for(int v:candidate){
+//        double result = eliminate_cycle(v);
+//        upper[v]-= result;
+//    }
 
     for(int v : candidate) {
         upper[v]*=r;
@@ -650,58 +667,56 @@ double eliminate_cycle(int src){
 
     Vint stack;
     Vint visit_times;
-    Vint cycle;
     Vint pointer;
-    vector<Vint> cycle_path;
     visit_times.resize(vnums,0);
     stack.resize(1000,-1);
-    cycle_path.reserve(vnums);
     pointer.resize(vnums,0);
     int top = 1;
     stack[top] = src;
     visit_times[src] = 1;
     int now;
     double sum = 0;
+    double prob;
     while(top>0){
         now = stack[top];
-        while (pointer[now]<Gneighbour[now].size()){
-            Edge &e = Gneighbour[now][pointer[now]];
-            if(visit_times[e.vertex]==0){
-                visit_times[e.vertex] = 1;
-                if(top<=layer){
-                    top++;
-                    stack[top] = e.vertex;
-                } else{
-                    visit_times[stack[top]] = 2;
-                    visit_times[e.vertex] = 2;
-                    top--;
-                }
-                pointer[now]++;
-                break;
-            }
-            else{
-                pointer[now]++;
-                if(visit_times[e.vertex]==1){
-                    cycle.assign(stack.begin()+1,stack.begin()+top+1);
-                    cycle.emplace_back(e.vertex);
-                    cycle_path.emplace_back(cycle);
-                    continue;
-                }
-            }
-        }
-        if(pointer[now]==Gneighbour[now].size()){
+        if(pointer[now]==Gneighbour[now].size() or top>layer){
             visit_times[stack[top]] = 2;
             top--;
         }
-    }
-    for(Vint path:cycle_path){
-        double prob = 1;
-        for(int i = 0;i<path.size()-1;i++){
-            for(Edge e:Gneighbour[path[i]])
-                if(e.vertex==path[i+1])
-                    prob*=e.weight/RAND_MAX;
+        else{
+            while (top<=layer and pointer[now]<Gneighbour[now].size()){
+                Edge &e = Gneighbour[now][pointer[now]];
+                if(visit_times[e.vertex]==1){
+//                  calculate chained prob of this cycle
+                    prob = 1;
+                    for(int i = 1;i<top;i++){
+                        for(Edge &a:Gneighbour[stack[i]])
+                            if(a.vertex==stack[i+1]){
+                                prob*=a.weight/RAND_MAX;
+                                break;
+                            }
+                    }
+                    for(Edge &s:Gneighbour[stack[top]]){
+                        if(s.vertex==e.vertex){
+                            prob*=s.weight/RAND_MAX;
+                            break;
+                        }
+
+                    }
+                    sum+=prob;
+                    total_cycle+=1;
+                    pointer[now]++;
+                    continue;
+                }
+                else{
+                    visit_times[e.vertex] = 1;
+                    top++;
+                    stack[top] = e.vertex;
+                    pointer[now]++;
+                    break;
+                }
+            }
         }
-        sum+=prob;
     }
     return sum;
 }
@@ -814,7 +829,6 @@ void staticCELF(int k, Vint &candidate, Vint &seeds) {
     unordered_set<int> best_infset;
     printf("initialization:%fs\n",time_by(start));
     result["initial"]=to_string(time_by(start));
-
     int sum=0;
 
     for(int i=0;i<k;i++){
